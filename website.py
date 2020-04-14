@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from pathlib import Path
+from uuid import uuid4
 
 """Simple HTTP Server With Upload.
 This module builds on BaseHTTPServer by implementing the standard GET
@@ -29,6 +31,18 @@ from queue_functions import save_to_hard_drive
 REDIS = True
 QUEUE = Queue(connection=Redis())
 
+import redis
+conn = redis.Redis('localhost')
+
+# data = {}
+# conn.hmset("pythonDict", data)
+# conn.hgetall("pythonDict")
+# conn.hget("pythonDict", "Name")
+# conn.set('test.py',"value")
+
+RESULTS = Path("./results")
+
+
 class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
     """Simple HTTP request handler with GET/HEAD/POST commands.
     This serves files from the current directory and any of its
@@ -48,7 +62,7 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             # Make sure the sever is started
             # subprocess.Popen("bash /media/data/OneDrive/Documents/Graduate School/2020.1/601R - Big Data/redis/redis-5.0.7/src/redis-server", shell=True)
             self.queue = Queue(connection=Redis())
-            print("WTF", self.queue)
+            print(self.queue)
             pass
 
     def do_GET(self):
@@ -57,6 +71,8 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         if f:
             self.copyfile(f, self.wfile)
             f.close()
+        else:
+            print("f", f)
 
     def do_HEAD(self):
         """Serve a HEAD request."""
@@ -66,7 +82,7 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         """Serve a POST request."""
-        r, info = self.deal_post_data()
+        r, info, rand_token = self.deal_post_data()
 
         print((r, info, "by: ", self.client_address))
         f = BytesIO()
@@ -79,10 +95,16 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         else:
             f.write(b"<strong>Failed:</strong>")
         f.write(info.encode())
-        f.write(("<br><a href=\"%s\">back</a>" % self.headers['referer']).encode())
-        f.write(b"<hr><small>Powerd By: bones7456, check new version at ")
-        f.write(b"<a href=\"http://li2z.cn/?s=SimpleHTTPServerWithUpload\">")
-        f.write(b"here</a>.</small></body>\n</html>\n")
+        f.write(("<br><a href=\"%s\">back</a><br>" % self.headers['referer']).encode())
+
+        if rand_token:
+            result_website = f"<a href=\"/RESULT_overlay_0_{rand_token}\">here</a>"
+            result_website2 = f"<a href=\"/RESULT_0_{rand_token}\">here</a>"
+            f.write(f"Your results will be available {result_website} and {result_website2}".encode())
+
+        #f.write(b"<hr><small>Powerd By: bones7456, check new version at ")
+        #f.write(b"<a href=\"http://li2z.cn/?s=SimpleHTTPServerWithUpload\">")
+        f.write(b"</body>\n</html>\n")
         length = f.tell()
         f.seek(0)
         self.send_response(200)
@@ -94,6 +116,7 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             f.close()
 
     def deal_post_data(self):
+        rand_token = None
         content_type = self.headers['content-type']
         if not content_type:
             return (False, "Content-Type header doesn't contain boundary")
@@ -115,13 +138,14 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         line = self.rfile.readline()
         remainbytes -= len(line)
 
-        tempfile_obj = MemoryTempfile()
-
+        rand_token = uuid4()
+        raw_path = f"./raw/{rand_token}"
         try:
-            #out = open(fn, 'wb')
-            out = tempfile_obj.TemporaryFile()
+            out = open(raw_path, 'wb')
+            #tempfile_obj = MemoryTempfile()
+            #out = tempfile_obj.TemporaryFile()
         except IOError:
-            return (False, "Can't create file to write, do you have permission to write?")
+            return (False, "Can't create file to write, do you have permission to write?", None)
 
         preline = self.rfile.readline()
         remainbytes -= len(preline)
@@ -138,16 +162,18 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 if REDIS:
                     try:
                         #self.queue.enqueue(save_to_hard_drive, (tempfile_obj, fn))
-                        QUEUE.enqueue(save_to_hard_drive, (fn,tempfile_obj))
-                        out.close()
+                        text = ""
+                        user = ""
+                        print("QUEUING IT UP!")
+                        QUEUE.enqueue(save_to_hard_drive, (fn,raw_path, rand_token, text, user))
                     except Exception as e:
                         print(e)
-                        return (True, "Problem queuing to Redis")
-                return (True, "File '%s' upload success!" % fn)
+                        return (True, "Problem queuing to Redis", None)
+                return (True, "File '%s' upload success!" % fn, rand_token)
             else:
                 out.write(preline)
                 preline = line
-        return (False, "Unexpect Ends of data.")
+        return (False, "Unexpected end of data.", None)
 
     def send_head(self):
         """Common code for GET and HEAD commands.
@@ -158,29 +184,41 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         None, in which case the caller has nothing further to do.
         """
         path = self.translate_path(self.path)
-        f = None
-        if os.path.isdir(path):
-            if not self.path.endswith('/'):
-                # redirect browser - doing basically what apache does
-                self.send_response(301)
-                self.send_header("Location", self.path + "/")
-                self.end_headers()
-                return None
-            for index in "index.html", "index.htm":
-                index = os.path.join(path, index)
-                if os.path.exists(index):
-                    path = index
-                    break
-            else:
-                return self.list_directory(path)
-        ctype = self.guess_type(path)
+        job = Path(path).stem
+        if job.startswith("RESULT_"):
+            # Check if it's done
+            print("Looking for result")
+            f = self.check_on_file(job)
+            return f
+        else:
+            f = None
+            if os.path.isdir(path):
+                if not self.path.endswith('/'):
+                    # redirect browser - doing basically what apache does
+                    self.send_response(301)
+                    self.send_header("Location", self.path + "/")
+                    self.end_headers()
+                    return None
+                for index in "index.html", "index.htm":
+                    index = os.path.join(path, index)
+                    if os.path.exists(index):
+                        path = index
+                        break
+                else:
+                    return self.list_directory(path)
+            return self.return_file(path)
+
+    def return_file(self, path):
+        ctype = self.guess_type(str(path))
         try:
             # Always read in binary mode. Opening files in text mode may cause
             # newline translations, making the actual size of the content
             # transmitted *less* than the content-length!
             f = open(path, 'rb')
+            print(f"File found, opening {path}")
         except IOError:
             self.send_error(404, "File not found")
+            print("File not found")
             return None
         self.send_response(200)
         self.send_header("Content-type", ctype)
@@ -205,14 +243,19 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         f = BytesIO()
         displaypath = cgi.escape(urllib.parse.unquote(self.path))
         f.write(b'<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">')
-        f.write(("<html>\n<title>Directory listing for %s</title>\n" % displaypath).encode())
-        f.write(("<body>\n<h2>Directory listing for %s</h2>\n" % displaypath).encode())
+        f.write(("<html>\n<title>Upload your handwriting!</title>\n").encode())
+        f.write(("<body>\n<h2>Upload your handwriting!</h2>\n").encode())
         f.write(b"<hr>\n")
         f.write(b"<form ENCTYPE=\"multipart/form-data\" method=\"post\">")
         f.write(b"<input name=\"file\" type=\"file\"/>")
-        f.write(b"<input type=\"submit\" value=\"upload\"/></form>\n")
+        f.write(b"""<input type=\"submit\" value=\"upload\"/><br>
+          <label for="user">Name:</label><br>
+          <input type="text" id="user" name="user"><br>
+          <label for="gt">Ground Truth Text:</label><br>
+          <input type="text" id="gt" name="gt">    
+            </form>\n""")
         f.write(b"<hr>\n<ul>\n")
-        for name in list:
+        for name in []: #list:
             fullname = os.path.join(path, name)
             displayname = linkname = name
             # Append / for directories or @ for symbolic links
@@ -296,18 +339,54 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         '.h': 'text/plain',
     })
 
+    def check_on_file(self, result_token):
+        token = result_token[7:]
+        print(f"Requested {RESULTS / f'{token}.png'}")
+        path = RESULTS / f"{token}.png"
+        if path.exists():
+            print("Image found")
+            f = self.return_file(path)
+            return f
+
+        else:
+            self.make_webpage(
+            b"""<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+            <html>\n<title>Still processing</title>\n
+            <body>\n<h2>This upload is still processing. Please check back later.</h2>\n            
+            <hr> \n
+            </body></html>""")
+            return None
+            # \n
+
+    def make_webpage(self, html):
+        #r, info = self.deal_post_data()
+
+        f = BytesIO()
+        f.write(html)
+        #f.write(info.encode())
+
+        length = f.tell()
+        f.seek(0)
+        self.send_response(200)
+        self.send_header("Content-type", "text/html")
+        self.send_header("Content-Length", str(length))
+        self.end_headers()
+        if f:
+            self.copyfile(f, self.wfile)
+            f.close()
+
 
 def test(HandlerClass=SimpleHTTPRequestHandler,
          ServerClass=http.server.HTTPServer):
     http.server.test(HandlerClass, ServerClass)
 
 def run():
-    PORT = 8000
+    PORT = 10031
     Handler = SimpleHTTPRequestHandler
     httpd = http.server.HTTPServer(("", PORT), Handler)
     httpd.serve_forever()
 
 
 if __name__ == '__main__':
-    #test()
+    #test.py()
     run()
