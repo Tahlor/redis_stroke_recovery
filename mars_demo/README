@@ -1,0 +1,4 @@
+# Mars.py - print a Mars pic one at a time
+# print_mars_photos.py - put them all in a redis queue
+    ## Must have redis running on another terminal
+    ## After queuing, run "rqworker" to start working on them (make sure you're in the right python env)
