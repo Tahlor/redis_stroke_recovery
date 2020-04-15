@@ -1,3 +1,16 @@
+from pymongo import MongoClient
+import xml.etree.ElementTree as ET
+from urllib.request import urlopen
+import xmltodict
+from pathlib import Path
+from collections import defaultdict
+from dateutil.parser import *
+
+cl = MongoClient()
+db = cl["hwr_data"]
+#cl.drop_database('hwr_data')
+docs = db.docs
+
 from redis import Redis
 from rq import Queue
 
@@ -13,7 +26,7 @@ def save_to_hard_drive(the_files):
     Returns:
 
     """
-    print("DOING IT!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+
     file_name, raw_path, rand_token, text, user = the_files
     print(raw_path)
 
@@ -23,6 +36,8 @@ def save_to_hard_drive(the_files):
     with (output_path / f"{rand_token}.png").open("wb") as f:
         f.write(data)
 
+    doc = {"file_name":file_name, "raw_path": raw_path, "token":rand_token, "text":text, "user":user}
+    docs.insert_one(doc)
 
 if __name__=='__main__':
     # Loop through Queue

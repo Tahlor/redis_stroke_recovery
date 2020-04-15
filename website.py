@@ -123,6 +123,7 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         boundary = content_type.split("=")[1].encode()
         remainbytes = int(self.headers['content-length'])
         line = self.rfile.readline()
+        print("line", line)
         remainbytes -= len(line)
         if not boundary in line:
             return (False, "Content NOT begin with boundary")
@@ -162,8 +163,9 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 if REDIS:
                     try:
                         #self.queue.enqueue(save_to_hard_drive, (tempfile_obj, fn))
-                        text = ""
-                        user = ""
+                        print(line.decode())
+                        text = re.findall(r'.*name="gt"', line.decode())
+                        user = re.findall(r'.*name="user"', line.decode())
                         print("QUEUING IT UP!")
                         QUEUE.enqueue(save_to_hard_drive, (fn,raw_path, rand_token, text, user))
                     except Exception as e:
@@ -254,6 +256,17 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
           <label for="gt">Ground Truth Text:</label><br>
           <input type="text" id="gt" name="gt">    
             </form>\n""")
+        f.write(b"""<br> This tool is designed to work on single lines of images, similar to the one below; tested with PNG images <br>""")
+        f.write(b"""<br><img src=\"/data/a01-000u-05.png\" height='30'><br>""")
+        f.write(b"""<br> Sample output: <br>""")
+        f.write(b"""<img src=\"data/output/a01-000u-02.png\" height='60'>""")
+        """
+                <a href='./images/Smith%27s%20-%20Krystalee.png'>Smith's - Krystalee</a><br /><br /><div style='width: 112.5px; height: 60px; overflow: hidden'>
+				 	<a href='./images/Provo%20Library%20Card.png'>
+						<img src='./images/Provo%20Library%20Card.png' width='112.5' height='200' alt='Provo Library Card.png' align='middle'>
+				    </a>
+        """
+
         f.write(b"<hr>\n<ul>\n")
         for name in []: #list:
             fullname = os.path.join(path, name)
