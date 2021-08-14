@@ -6,7 +6,7 @@ my_redis = Root() # redis.Redis('localhost')
 data = {"user":"Taylor", }
 
 def check_for_user(user="Taylor"):
-    f = my_redis.hgetall(user)
+    f = my_redis.user
     if f:
         print("user exists", f)
         return True
@@ -16,7 +16,7 @@ def check_for_user(user="Taylor"):
 
 def add_user(data):
     if not check_for_user(data["user"]):
-        my_redis.hmset(data["user"], data)
+        my_redis. = data
 
 #conn.hmset("pythonDict", {"Location": "Ahmedabad", "Company": ["A/C Prism", "ECW", "Musikaar"]})
 
